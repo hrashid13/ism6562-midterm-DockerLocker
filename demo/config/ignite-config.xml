@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean class="org.apache.ignite.configuration.IgniteConfiguration">
+
+        <!-- Enable REST API on port 8080 (TCP binary) -->
+        <property name="connectorConfiguration">
+            <bean class="org.apache.ignite.configuration.ConnectorConfiguration">
+                <property name="port" value="8080"/>
+            </bean>
+        </property>
+
+        <!-- Cluster node discovery -->
+        <property name="discoverySpi">
+            <bean class="org.apache.ignite.spi.discovery.tcp.TcpDiscoverySpi">
+                <property name="ipFinder">
+                    <bean class="org.apache.ignite.spi.discovery.tcp.ipfinder.vm.TcpDiscoveryVmIpFinder">
+                        <property name="addresses">
+                            <list>
+                                <value>ignite-node1:47500</value>
+                                <value>ignite-node2:47500</value>
+                                <value>ignite-node3:47500</value>
+                            </list>
+                        </property>
+                    </bean>
+                </property>
+            </bean>
+        </property>
+
+    </bean>
+</beans>
