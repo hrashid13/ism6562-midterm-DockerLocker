@@ -1,0 +1,77 @@
+# ============================================================
+# Grocery Store OLAP Demo -- Apache Ignite 2 - 3 Node Cluster
+# Distributed star schema across 3 in-memory nodes
+# ============================================================
+
+networks:
+  ignite-net:
+    driver: bridge
+
+services:
+
+  ignite-node1:
+    image: apacheignite/ignite:2.16.0
+    container_name: ignite-node1
+    hostname: ignite-node1
+    networks:
+      - ignite-net
+    ports:
+      - "8081:8081"
+      - "10800:10800"
+      - "47100:47100"
+      - "47500:47500"
+    environment:
+      - CONFIG_URI=/opt/ignite/config/ignite-config.xml
+      - OPTION_LIBS=ignite-rest-http
+      - IGNITE_QUIET=false
+    volumes:
+      - ./config/ignite-config.xml:/opt/ignite/config/ignite-config.xml
+
+  ignite-node2:
+    image: apacheignite/ignite:2.16.0
+    container_name: ignite-node2
+    hostname: ignite-node2
+    networks:
+      - ignite-net
+    environment:
+      - CONFIG_URI=/opt/ignite/config/ignite-config.xml
+      - OPTION_LIBS=ignite-rest-http
+      - IGNITE_QUIET=false
+    volumes:
+      - ./config/ignite-config.xml:/opt/ignite/config/ignite-config.xml
+    depends_on:
+      - ignite-node1
+
+  ignite-node3:
+    image: apacheignite/ignite:2.16.0
+    container_name: ignite-node3
+    hostname: ignite-node3
+    networks:
+      - ignite-net
+    environment:
+      - CONFIG_URI=/opt/ignite/config/ignite-config.xml
+      - OPTION_LIBS=ignite-rest-http
+      - IGNITE_QUIET=false
+    volumes:
+      - ./config/ignite-config.xml:/opt/ignite/config/ignite-config.xml
+    depends_on:
+      - ignite-node1
+
+  loader:
+    image: python:3.11-slim
+    container_name: ignite-loader
+    networks:
+      - ignite-net
+    volumes:
+      - ./data:/data
+      - ./init:/init
+      - ./scripts:/scripts
+    profiles:
+      - loader
+    command: >
+      bash -c "pip install requests --quiet &&
+               python /scripts/load_data.py"
+    depends_on:
+      - ignite-node1
+      - ignite-node2
+      - ignite-node3

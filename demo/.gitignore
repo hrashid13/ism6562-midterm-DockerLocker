@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Raw DBeaver exports (unprocessed, not needed in repo)
+raw/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
