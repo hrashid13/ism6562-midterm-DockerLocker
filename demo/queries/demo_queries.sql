@@ -112,3 +112,25 @@ SELECT
 FROM fact_sales;
 -- Expected: same result even with node2 stopped
 -- This works because backups=1 in the schema
+
+
+
+-- DEMO 9: Most Profitable Customer Segments
+-- Combines customer + product dimensions
+-- Shows how distributed joins enable deeper insights
+
+SELECT
+    c.is_loyalty,
+    p.category,
+    COUNT(*)                         AS transactions,
+    COUNT(DISTINCT c.id)             AS unique_customers,
+    ROUND(SUM(f.revenue), 2)         AS total_revenue,
+    ROUND(SUM(f.profit), 2)          AS total_profit,
+    ROUND(AVG(f.profit), 2)          AS avg_profit_per_txn,
+    ROUND(SUM(f.profit) / SUM(f.revenue) * 100, 2) AS profit_margin_pct
+FROM fact_sales f
+JOIN dim_customer c ON f.dim_customer_id = c.id
+JOIN dim_product  p ON f.dim_product_id  = p.id
+GROUP BY c.is_loyalty, p.category
+ORDER BY total_profit DESC
+LIMIT 10;
