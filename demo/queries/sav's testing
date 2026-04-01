@@ -1,0 +1,84 @@
+-- Create tables with different cache modes
+CREATE TABLE accounts (
+    id       BIGINT PRIMARY KEY,
+    name     VARCHAR,
+    balance  DECIMAL(15,2)
+) WITH "ATOMICITY=TRANSACTIONAL, CACHE_NAME=accounts";
+
+CREATE TABLE audit_log (
+    id         BIGINT PRIMARY KEY,
+    account_id BIGINT,
+    action     VARCHAR,
+    amount     DECIMAL(15,2),
+    ts         TIMESTAMP
+) WITH "ATOMICITY=TRANSACTIONAL, CACHE_NAME=audit";
+
+-- Insert test data
+INSERT INTO accounts VALUES (1, 'Alice', 1000.00);
+INSERT INTO accounts VALUES (2, 'Bob',   500.00);
+
+-- ── DEMO 1: Read Committed ───────────────────────────────────────────────────
+-- Simple read — no transaction, read committed by default
+-- Non-repeatable reads are possible if another session commits between reads
+SELECT balance FROM accounts WHERE id = 1;
+
+-- ── DEMO 2: Repeatable Read (2PC transaction) ────────────────────────────────
+-- Both reads of Alice's balance will return the same value within this transaction
+BEGIN;
+    SELECT balance FROM accounts WHERE id = 1;  -- snapshot taken here
+    -- (another session could commit a change here, but we won't see it)
+    SELECT balance FROM accounts WHERE id = 1;  -- same result guaranteed
+COMMIT;
+
+-- ── DEMO 3: Distributed ACID transfer (2PC across two keys) ─────────────────
+-- This is the core 2PC use case — atomically debit Alice, credit Bob
+-- Ignite coordinator drives PREPARE → COMMIT across both partition owners
+BEGIN;
+    UPDATE accounts SET balance = balance - 200.00 WHERE id = 1;  -- debit Alice
+    UPDATE accounts SET balance = balance + 200.00 WHERE id = 2;  -- credit Bob
+
+    INSERT INTO audit_log VALUES (
+        1, 1, 'TRANSFER_OUT', 200.00, CURRENT_TIMESTAMP
+    );
+    INSERT INTO audit_log VALUES (
+        2, 2, 'TRANSFER_IN', 200.00, CURRENT_TIMESTAMP
+    );
+COMMIT;
+-- If any statement fails, the entire transaction rolls back — no partial updates
+
+-- ── DEMO 4: Optimistic concurrency conflict ──────────────────────────────────
+-- Session A and Session B both read Alice's balance, then try to update
+-- Whichever commits second will get an optimistic lock exception and must retry
+
+-- Session A:
+BEGIN;
+    SELECT balance FROM accounts WHERE id = 1;  -- reads 800.00
+    UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+COMMIT;  -- succeeds
+
+-- Session B (concurrent with A):
+BEGIN;
+    SELECT balance FROM accounts WHERE id = 1;  -- also read 800.00
+    UPDATE accounts SET balance = balance - 50  WHERE id = 1;
+COMMIT;  -- throws OptimisticLockException → application must catch and retry
+
+-- ── DEMO 5: Serializable — prevent phantom reads with range lock ─────────────
+-- Without serializable, a second SELECT in the same tx could return new rows
+-- inserted by another session. Serializable prevents this via range locks.
+BEGIN;
+    SELECT * FROM accounts WHERE balance > 500;   -- range lock acquired here
+    -- another session cannot INSERT a row with balance > 500 until we commit
+    SELECT * FROM accounts WHERE balance > 500;   -- guaranteed same result
+COMMIT;
+
+-- ── DEMO 6: Performance contrast — ATOMIC table (no transactions) ────────────
+-- ATOMIC cache: no 2PC, no locks, sub-millisecond single-key ops
+CREATE TABLE session_cache (
+    session_id VARCHAR PRIMARY KEY,
+    user_id    BIGINT,
+    expires_at TIMESTAMP
+) WITH "ATOMICITY=ATOMIC, CACHE_NAME=sessions";
+
+-- This write bypasses 2PC entirely — much faster, but no multi-key guarantees
+INSERT INTO session_cache VALUES ('abc123', 1, '2026-12-31 00:00:00');
+SELECT * FROM session_cache WHERE session_id = 'abc123';
